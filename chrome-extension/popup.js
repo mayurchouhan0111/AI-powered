@@ -47,9 +47,12 @@ class SmartAIFileManager {
 
   async selectFolder() {
     try {
-      const folderPath = prompt('Enter the full path to your project folder:\n\nExample:\nC:\\Users\\YourName\\Projects\\MyProject\n/Users/yourname/Projects/myproject');
+      const folderPath = prompt('Enter the full path to your project folder:');
       
-      if (!folderPath) return;
+      if (!folderPath) {
+        this.updateStatus('Folder selection cancelled', 'info');
+        return;
+      }
 
       const response = await fetch(`${this.backendUrl}/set-folder`, {
         method: 'POST',
@@ -57,24 +60,38 @@ class SmartAIFileManager {
           'Content-Type': 'application/json',
           'Accept': 'application/json'
         },
-        body: JSON.stringify({ folderPath: folderPath.trim() })
+        body: JSON.stringify({ 
+          folderPath: folderPath.trim() 
+        })
       });
+
+      // Check for non-JSON responses
+      const contentType = response.headers.get('content-type');
+      if (!contentType || !contentType.includes('application/json')) {
+        throw new Error('Server returned non-JSON response');
+      }
 
       const result = await response.json();
 
-      if (response.ok) {
+      if (!response.ok) {
+        throw new Error(result.error || 'Failed to set folder');
+      }
+
+      if (result.success) {
         this.currentFolder = folderPath.trim();
         this.elements.folderPath.value = this.currentFolder;
         this.elements.currentFolder.textContent = `Selected: ${this.currentFolder}`;
         
-        chrome.storage.local.set({ savedFolder: this.currentFolder });
+        await chrome.storage.local.set({ savedFolder: this.currentFolder });
         
         this.updateStatus('Folder selected successfully! 📁✅', 'success');
         this.addLogEntry(`Folder set: ${this.currentFolder}`, 'success');
       } else {
         throw new Error(result.error);
       }
+
     } catch (error) {
+      console.error('Folder selection error:', error);
       this.updateStatus(`Folder selection failed: ${error.message}`, 'error');
       this.addLogEntry(`Folder error: ${error.message}`, 'error');
     }

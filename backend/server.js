@@ -95,6 +95,12 @@ class AIFileManagerServer {
       console.log(`${new Date().toISOString()} - ${req.method} ${req.path}`);
       next();
     });
+
+    // Ensure JSON responses
+    this.app.use((req, res, next) => {
+      res.setHeader('Content-Type', 'application/json');
+      next();
+    });
   }
 
   setupRoutes() {
@@ -135,6 +141,43 @@ class AIFileManagerServer {
           error: 'Failed to execute smart command',
           details: error.message,
           timestamp: new Date().toISOString()
+        });
+      }
+    });
+
+    this.app.post('/set-folder', async (req, res) => {
+      try {
+        const { folderPath } = req.body;
+        
+        if (!folderPath) {
+          return res.status(400).json({
+            success: false,
+            error: 'Folder path is required'
+          });
+        }
+
+        // Validate folder exists
+        if (!await fs.pathExists(folderPath)) {
+          return res.status(400).json({
+            success: false,
+            error: 'Folder does not exist'
+          });
+        }
+
+        this.config.targetFolderPath = folderPath;
+        await this.saveConfig();
+
+        res.json({
+          success: true,
+          message: 'Folder set successfully',
+          path: folderPath
+        });
+
+      } catch (error) {
+        console.error('Set folder error:', error);
+        res.status(500).json({
+          success: false,
+          error: error.message
         });
       }
     });
