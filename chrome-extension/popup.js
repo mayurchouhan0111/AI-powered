@@ -44,15 +44,23 @@ class SmartAIFileManager {
 
   async showFolderDialog() {
     try {
-      const dirHandle = await window.showDirectoryPicker({
-        mode: 'read'
+      // Use the newer File System Access API
+      const handle = await window.showOpenFilePicker({
+        types: [{
+          description: 'Folders',
+          accept: {
+            'folder/*': ['.folder'] // This is a workaround
+          }
+        }],
+        multiple: false
       });
-
-      const folderPath = await this.getFolderPath(dirHandle);
+      
+      const file = await handle[0].getFile();
+      const folderPath = file.webkitRelativePath.split('/')[0];
+      
       if (folderPath) {
         await this.updateFolderInUI(folderPath);
       }
-
     } catch (error) {
       if (error.name !== 'AbortError') {
         this.handleFolderError(error);
@@ -82,28 +90,26 @@ class SmartAIFileManager {
 
   async updateFolderInUI(folderPath) {
     try {
-      // First try to access the folder
-      const response = await fetch(`${this.backendUrl}/set-folder`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ folderPath })
-      });
-
-      const result = await response.json();
-
-      if (!result.success) {
-        throw new Error(result.error);
-      }
-
-      // Update UI and storage
       this.currentFolder = folderPath;
       this.elements.currentFolder.textContent = folderPath;
+      
       await chrome.storage.local.set({ savedFolder: folderPath });
       
       this.updateStatus('✅ Folder selected successfully!', 'success');
       this.addLogEntry(`📂 Selected: ${folderPath}`, 'success');
+
+      // Send to backend
+      const response = await fetch(`${this.backendUrl}/set-folder`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ folderPath })
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to register folder with backend');
+      }
 
     } catch (error) {
       this.handleFolderError(error);
@@ -219,6 +225,14 @@ class SmartAIFileManager {
     console.error('Folder error:', error);
     this.updateStatus(`❌ ${error.message}`, 'error');
     this.addLogEntry(`Folder error: ${error.message}`, 'error');
+  }
+
+  // Add button state management function
+  setExecuteButtonState(isLoading) {
+    if (!this.elements.executeBtn) return;
+    
+    this.elements.executeBtn.disabled = isLoading;
+    this.elements.executeBtn.textContent = isLoading ? '🔄 Working...' : '🚀 Execute';
   }
 }
 

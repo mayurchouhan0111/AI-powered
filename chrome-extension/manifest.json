@@ -1,19 +1,15 @@
 {
   "manifest_version": 3,
   "name": "AI File Manager",
-  "version": "1.0.0",
-  "description": "AI-powered file management assistant",
+  "version": "1.0",
+  "description": "AI-powered file management operations",
   "permissions": [
     "storage",
-    "activeTab",
-    "fileSystem"
+    "activeTab"
   ],
   "host_permissions": [
     "https://ai-powered-iwnx.onrender.com/*"
   ],
-  "background": {
-    "service_worker": "background.js"
-  },
   "action": {
     "default_popup": "popup.html"
   }
