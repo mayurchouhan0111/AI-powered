@@ -8,7 +8,7 @@
     "activeTab"
   ],
   "host_permissions": [
-    "http://127.0.0.1:3000/*",
+    "https://ai-powered-iwnx.onrender.com/*",
     "http://localhost:3000/*"
   ],
   "background": {

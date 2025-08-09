@@ -10,7 +10,7 @@ chrome.runtime.onInstalled.addListener((details) => {
   if (details.reason === 'install') {
     console.log('AI File Manager extension installed');
     chrome.storage.local.set({
-      backendUrl: 'http://127.0.0.1:3000',
+      backendUrl: 'https://ai-powered-iwnx.onrender.com',
       lastUsed: Date.now()
     });
   }

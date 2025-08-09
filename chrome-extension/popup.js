@@ -1,9 +1,7 @@
 class SmartAIFileManager {
   constructor() {
-    // Use environment-specific backend URL
-    this.backendUrl = process.env.NODE_ENV === 'production' 
-      ? 'https://your-app-name.onrender.com'
-      : 'http://127.0.0.1:3000';
+    // Change backend URL to Render
+    this.backendUrl = 'https://ai-powered-iwnx.onrender.com';
     
     this.isRecording = false;
     this.recognition = null;
@@ -113,16 +111,38 @@ class SmartAIFileManager {
 
   async executeCommand() {
     const command = this.elements.commandInput.value.trim();
-    
+
     if (!this.validateCommand(command)) return;
 
     try {
-        this.setExecuteButtonState(true);
-        await this.executeWithRetry(command);
+      this.setExecuteButtonState(true);
+      this.updateStatus('Processing command...', 'info');
+
+      const response = await fetch(`${this.backendUrl}/smart-execute`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          command,
+          folderPath: this.currentFolder
+        })
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.message || `Server error: ${response.status}`);
+      }
+
+      this.handleSuccess(data);
+
     } catch (error) {
-        this.handleExecutionError(error);
+      console.error('Command execution failed:', error);
+      this.updateStatus(`❌ ${error.message}`, 'error');
+      this.addLogEntry(`❌ Error: ${error.message}`, 'error');
     } finally {
-        this.setExecuteButtonState(false);
+      this.setExecuteButtonState(false);
     }
   }
 

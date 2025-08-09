@@ -147,14 +147,24 @@ class AIFileManagerServer {
       }
     });
 
+    // Add error handling to /smart-execute
     this.app.post('/smart-execute', async (req, res) => {
       try {
         const { command, folderPath } = req.body;
-        console.log('Received /smart-execute:', req.body);
-
-        if (!command) {
-          return res.status(400).json({ error: 'Command is required' });
+        
+        if (!command || !folderPath) {
+          return res.status(400).json({
+            error: 'Missing required fields',
+            required: ['command', 'folderPath']
+          });
         }
+
+        // Log request details
+        console.log('Smart execute request:', {
+          command,
+          folderPath,
+          timestamp: new Date().toISOString()
+        });
 
         console.log(`🧠 Smart Execute: "${command}" in ${folderPath}`);
 
