@@ -45,6 +45,17 @@ class SmartAIFileManager {
     });
   }
 
+  async validateFolderPath(folderPath) {
+    return new Promise((resolve) => {
+      chrome.runtime.sendMessage({
+        type: 'CHECK_FOLDER_EXISTS',
+        path: folderPath
+      }, (response) => {
+        resolve(response.exists);
+      });
+    });
+  }
+
   async selectFolder() {
     try {
       const folderPath = prompt('Enter the full path to your project folder:');
@@ -52,6 +63,12 @@ class SmartAIFileManager {
       if (!folderPath) {
         this.updateStatus('Folder selection cancelled', 'info');
         return;
+      }
+
+      // Check if folder exists locally first
+      const exists = await this.validateFolderPath(folderPath.trim());
+      if (!exists) {
+        throw new Error('Folder does not exist on your machine');
       }
 
       const response = await fetch(`${this.backendUrl}/set-folder`, {
@@ -77,18 +94,14 @@ class SmartAIFileManager {
         throw new Error(result.error || 'Failed to set folder');
       }
 
-      if (result.success) {
-        this.currentFolder = folderPath.trim();
-        this.elements.folderPath.value = this.currentFolder;
-        this.elements.currentFolder.textContent = `Selected: ${this.currentFolder}`;
-        
-        await chrome.storage.local.set({ savedFolder: this.currentFolder });
-        
-        this.updateStatus('Folder selected successfully! 📁✅', 'success');
-        this.addLogEntry(`Folder set: ${this.currentFolder}`, 'success');
-      } else {
-        throw new Error(result.error);
-      }
+      this.currentFolder = folderPath.trim();
+      this.elements.folderPath.value = this.currentFolder;
+      this.elements.currentFolder.textContent = `Selected: ${this.currentFolder}`;
+      
+      await chrome.storage.local.set({ savedFolder: this.currentFolder });
+      
+      this.updateStatus('Folder selected successfully! 📁✅', 'success');
+      this.addLogEntry(`Folder set: ${this.currentFolder}`, 'success');
 
     } catch (error) {
       console.error('Folder selection error:', error);

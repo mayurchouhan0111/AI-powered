@@ -5,11 +5,11 @@
   "description": "AI-powered file management assistant",
   "permissions": [
     "storage",
-    "activeTab"
+    "activeTab",
+    "fileSystem"
   ],
   "host_permissions": [
-    "https://ai-powered-iwnx.onrender.com/*",
-    "http://localhost:3000/*"
+    "https://ai-powered-iwnx.onrender.com/*"
   ],
   "background": {
     "service_worker": "background.js"

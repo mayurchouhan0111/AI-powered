@@ -156,20 +156,14 @@ class AIFileManagerServer {
           });
         }
 
-        // Validate folder exists
-        if (!await fs.pathExists(folderPath)) {
-          return res.status(400).json({
-            success: false,
-            error: 'Folder does not exist'
-          });
-        }
-
+        // Store folder path without validation
+        // since folder exists on client machine
         this.config.targetFolderPath = folderPath;
         await this.saveConfig();
 
         res.json({
           success: true,
-          message: 'Folder set successfully',
+          message: 'Folder path registered successfully',
           path: folderPath
         });
 

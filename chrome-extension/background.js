@@ -43,6 +43,24 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
         chrome.storage.local.set({ commandHistory: history });
       });
       break;
+
+    case 'CHECK_FOLDER_EXISTS':
+      // Use chrome.runtime.lastError to handle potential errors
+      try {
+        // Using FileSystemHandle API to check folder existence
+        window.showDirectoryPicker({
+          startIn: request.path
+        }).then(() => {
+          sendResponse({ exists: true });
+        }).catch(() => {
+          sendResponse({ exists: false });
+        });
+        
+        return true; // Keep message channel open for async response
+      } catch (error) {
+        sendResponse({ exists: false });
+      }
+      break;
   }
 });
 
