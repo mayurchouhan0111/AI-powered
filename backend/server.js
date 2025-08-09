@@ -108,39 +108,27 @@ class AIFileManagerServer {
       try {
         const { command, folderPath } = req.body;
         
-        // Validate input
-        if (!command || !folderPath) {
+        if (!command) {
           return res.status(400).json({
-            error: 'Missing required fields',
-            details: { command: !!command, folderPath: !!folderPath }
+            success: false,
+            error: 'Command is required'
           });
         }
 
-        // Log request
-        console.log('📝 Processing command:', {
-          command,
-          folderPath,
-          timestamp: new Date().toISOString()
+        // Don't check folder existence since it's on client machine
+        const result = await this.processAICommand(command, folderPath);
+        
+        res.json({
+          success: true,
+          message: 'Command processed',
+          result
         });
 
-        // Validate folder exists
-        if (!fs.existsSync(folderPath)) {
-          return res.status(400).json({
-            error: 'Folder does not exist',
-            path: folderPath
-          });
-        }
-
-        // Process command with AI
-        const result = await this.processAICommand(command, folderPath);
-        res.json(result);
-
       } catch (error) {
-        console.error('Smart execute error:', error);
+        console.error('Command execution error:', error);
         res.status(500).json({
-          error: 'Failed to execute smart command',
-          details: error.message,
-          timestamp: new Date().toISOString()
+          success: false,
+          error: 'Failed to process command'
         });
       }
     });

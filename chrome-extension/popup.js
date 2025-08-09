@@ -141,7 +141,7 @@ class SmartAIFileManager {
 
   async executeCommand() {
     const command = this.elements.commandInput.value.trim();
-    
+
     if (!command) {
       this.updateStatus('Please enter a command', 'error');
       return;
@@ -153,29 +153,52 @@ class SmartAIFileManager {
     }
 
     try {
-      this.elements.executeBtn.disabled = true;
-      this.elements.executeBtn.textContent = '🔄 Working...';
-      
+      this.setExecuteButtonState(true);
+      this.updateStatus('Processing command...', 'info');
+
+      // First verify folder exists locally
+      if (!await this.verifyFolderExists(this.currentFolder)) {
+        throw new Error('Selected folder no longer exists');
+      }
+
       const response = await fetch(`${this.backendUrl}/smart-execute`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ command, folderPath: this.currentFolder })
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          command,
+          folderPath: this.currentFolder
+        })
       });
 
-      const result = await response.json();
-
-      if (!response.ok) throw new Error(result.error);
+      const data = await response.json();
+      
+      if (!data.success) {
+        throw new Error(data.error);
+      }
 
       this.updateStatus('✅ Command executed successfully!', 'success');
       this.elements.commandInput.value = '';
-      this.addLogEntry(`✅ ${result.message || 'Success'}`, 'success');
+      this.addLogEntry(`✅ ${data.message}`, 'success');
 
     } catch (error) {
       this.updateStatus(`❌ Error: ${error.message}`, 'error');
       this.addLogEntry(`❌ ${error.message}`, 'error');
     } finally {
-      this.elements.executeBtn.disabled = false;
-      this.elements.executeBtn.textContent = '🚀 Execute';
+      this.setExecuteButtonState(false);
+    }
+  }
+
+  async verifyFolderExists(folderPath) {
+    try {
+      // Request file system permission
+      const handle = await window.showDirectoryPicker({
+        startIn: folderPath
+      });
+      return true;
+    } catch (error) {
+      return false;
     }
   }
 
