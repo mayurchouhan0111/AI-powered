@@ -3,21 +3,33 @@
 <head>
     <title>AI Code Editor</title>
     <style>
-        body { width: 600px; padding: 10px; }
-        textarea { width: 100%; height: 300px; margin-bottom: 10px; }
-        input[type="text"] { width: 100%; margin-bottom: 10px; }
-        button { margin-right: 5px; }
+        body { width: 900px; height: 600px; display: flex; }
+        #editor-container { width: 60%; height: 100%; padding: 10px; }
+        #chat-container { width: 40%; height: 100%; padding: 10px; display: flex; flex-direction: column; }
+        #codeEditor { width: 100%; height: 80%; box-sizing: border-box; font-family: monospace; font-size: 14px; }
+        #chatHistory { height: 80%; overflow-y: scroll; padding: 10px; }
+        #aiCommand { width: 100%; height: 50px; box-sizing: border-box; margin-bottom: 10px; }
+        .file-actions { margin-bottom: 10px; }
+        .file-actions button { margin-right: 5px; }
     </style>
 </head>
 <body>
-    <h1>AI Code Editor</h1>
-    <textarea id="codeEditor"></textarea>
-    <input type="text" id="aiCommand" placeholder="Enter AI command">
-    <button id="saveBtn">Save</button>
-    <button id="sendBtn">Send to AI</button>
-    <button id="newBtn">New File</button>
-    <button id="loadBtn">Load File</button>
-    <div id="status"></div>
+    <div id="editor-container">
+        <h1>Code Editor</h1>
+        <div class="file-actions">
+            <button id="newBtn">New File</button>
+            <button id="loadBtn">Load File</button>
+            <button id="saveBtn">Save</button>
+            <input type="text" id="currentFilename" placeholder="Filename" style="width: 200px;">
+        </div>
+        <textarea id="codeEditor"></textarea>
+    </div>
+    <div id="chat-container">
+        <h1>AI Assistant</h1>
+        <div id="chatHistory"></div>
+        <input type="text" id="aiCommand" placeholder="Enter AI command">
+        <button id="sendBtn">Send to AI</button>
+    </div>
     <script src="popup.js"></script>
 </body>
 </html>
