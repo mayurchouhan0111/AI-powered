@@ -1,97 +1,35 @@
-/**
- * Background script for AI File Manager Chrome Extension
- */
+// background.js
 
-chrome.runtime.onStartup.addListener(() => {
-  console.log('AI File Manager extension started');
-});
-
-chrome.runtime.onInstalled.addListener((details) => {
-  if (details.reason === 'install') {
-    console.log('AI File Manager extension installed');
-    chrome.storage.local.set({
-      backendUrl: 'https://ai-powered-iwnx.onrender.com',
-      lastUsed: Date.now()
-    });
-  }
-});
-
-// Handle messages from popup
+// Listen for messages from the popup
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
-  console.log('Background received message:', request);
+    console.log('Received message:', request);
 
-  switch (request.action) {
-    case 'checkBackend':
-      checkBackendHealth()
-        .then(result => sendResponse(result))
-        .catch(error => sendResponse({ success: false, error: error.message }));
-      return true;
+    // Handle different actions
+    switch (request.action) {
+        case 'setFolder':
+        case 'writeFile':
+        case 'readFile':
+        case 'aiTask':
+            // Forward the message to the backend
+            fetch(`http://localhost:3000/${request.action}`, {
+                method: 'POST', // Assuming all these actions use POST
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify(request.data)
+            })
+                .then(response => response.json())
+                .then(data => {
+                    sendResponse({ response: data }); // Send the backend's response back to the popup
+                })
+                .catch(error => {
+                    sendResponse({ error: error.message });
+                });
+            return true;  // Important: Indicate that you will be sending a response asynchronously
 
-    case 'storeCommand':
-      chrome.storage.local.get(['commandHistory'], (result) => {
-        const history = result.commandHistory || [];
-        history.unshift({
-          command: request.command,
-          filename: request.filename,
-          timestamp: Date.now()
-        });
-        
-        if (history.length > 10) {
-          history.splice(10);
-        }
-        
-        chrome.storage.local.set({ commandHistory: history });
-      });
-      break;
-
-    case 'CHECK_FOLDER_EXISTS':
-      // Use chrome.runtime.lastError to handle potential errors
-      try {
-        // Using FileSystemHandle API to check folder existence
-        window.showDirectoryPicker({
-          startIn: request.path
-        }).then(() => {
-          sendResponse({ exists: true });
-        }).catch(() => {
-          sendResponse({ exists: false });
-        });
-        
-        return true; // Keep message channel open for async response
-      } catch (error) {
-        sendResponse({ exists: false });
-      }
-      break;
-  }
-});
-
-async function checkBackendHealth() {
-  try {
-    const { backendUrl } = await new Promise(resolve =>
-      chrome.storage.local.get(['backendUrl'], resolve)
-    );
-    
-    const url = (backendUrl || 'http://127.0.0.1:3000') + '/health';
-    console.log('Checking backend health:', url);
-    
-    const response = await fetch(url, {
-      method: 'GET',
-      headers: {
-        'Accept': 'application/json'
-      }
-    });
-
-    if (!response.ok) {
-      throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        default:
+            console.warn('Unknown action:', request.action);
+            sendResponse({ error: 'Unknown action' });
+            return false;
     }
-
-    const data = await response.json();
-    return { success: true, data };
-  } catch (error) {
-    console.error('Backend health check failed:', error);
-    return { 
-      success: false, 
-      error: error.message,
-      timestamp: new Date().toISOString()
-    };
-  }
-}
+});

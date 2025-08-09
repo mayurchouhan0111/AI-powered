@@ -1,242 +1,113 @@
-class SmartAIFileManager {
-  constructor() {
-    this.backendUrl = 'https://ai-powered-iwnx.onrender.com';
-    this.currentFolder = '';
-    this.isConnected = false;
-    
-    this.initializeElements();
-    this.setupEventListeners();
-    this.checkBackendConnection();
-    this.loadSavedFolder();
-  }
-
-  initializeElements() {
-    const elements = {
-      browseBtn: 'browseBtn',
-      selectFolderBtn: 'selectFolderBtn',
-      currentFolder: 'currentFolder',
-      commandInput: 'commandInput',
-      executeBtn: 'executeBtn',
-      voiceBtn: 'voiceBtn',
-      status: 'status',
-      logArea: 'logArea',
-      statusDot: 'statusDot',
-      connectionStatus: 'connectionStatus'
-    };
-
-    this.elements = Object.fromEntries(
-      Object.entries(elements).map(([key, id]) => {
-        const element = document.getElementById(id);
-        if (!element) throw new Error(`Element not found: ${id}`);
-        return [key, element];
-      })
-    );
-  }
-
-  setupEventListeners() {
-    this.elements.browseBtn.addEventListener('click', () => this.showFolderDialog());
-    this.elements.selectFolderBtn.addEventListener('click', () => this.showFolderPrompt());
-    this.elements.executeBtn.addEventListener('click', () => this.executeCommand());
-    this.elements.commandInput.addEventListener('keydown', (e) => {
-      if (e.key === 'Enter' && e.ctrlKey) this.executeCommand();
-    });
-  }
-
-  async showFolderDialog() {
-    try {
-      // Use the newer File System Access API
-      const handle = await window.showOpenFilePicker({
-        types: [{
-          description: 'Folders',
-          accept: {
-            'folder/*': ['.folder'] // This is a workaround
-          }
-        }],
-        multiple: false
-      });
-      
-      const file = await handle[0].getFile();
-      const folderPath = file.webkitRelativePath.split('/')[0];
-      
-      if (folderPath) {
-        await this.updateFolderInUI(folderPath);
-      }
-    } catch (error) {
-      if (error.name !== 'AbortError') {
-        this.handleFolderError(error);
-      }
-    }
-  }
-
-  showFolderPrompt() {
-    const folderPath = prompt(
-      'Enter the full path to your project folder:\n\n' +
-      'Example: D:\\UnHuman\\Crazyyy\\ai-file-manager'
-    );
-    
-    if (folderPath) {
-      this.updateFolderInUI(folderPath.trim());
-    }
-  }
-
-  async getFolderPath(dirHandle) {
-    try {
-      return dirHandle.name;
-    } catch (error) {
-      console.error('Failed to get folder path:', error);
-      return null;
-    }
-  }
-
-  async updateFolderInUI(folderPath) {
-    try {
-      this.currentFolder = folderPath;
-      this.elements.currentFolder.textContent = folderPath;
-      
-      await chrome.storage.local.set({ savedFolder: folderPath });
-      
-      this.updateStatus('✅ Folder selected successfully!', 'success');
-      this.addLogEntry(`📂 Selected: ${folderPath}`, 'success');
-
-      // Send to backend
-      const response = await fetch(`${this.backendUrl}/set-folder`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({ folderPath })
-      });
-
-      if (!response.ok) {
-        throw new Error('Failed to register folder with backend');
-      }
-
-    } catch (error) {
-      this.handleFolderError(error);
-    }
-  }
-
-  async loadSavedFolder() {
-    try {
-      const { savedFolder } = await chrome.storage.local.get(['savedFolder']);
-      if (savedFolder) {
-        await this.updateFolderInUI(savedFolder);
-      }
-    } catch (error) {
-      console.error('Failed to load saved folder:', error);
-    }
-  }
-
-  async checkBackendConnection() {
-    try {
-      const response = await fetch(`${this.backendUrl}/health`);
-      this.isConnected = response.ok;
-      this.elements.statusDot.classList.toggle('connected', this.isConnected);
-      this.elements.connectionStatus.textContent = this.isConnected ? 
-          'Backend Connected' : 'Backend Offline';
-      if (this.isConnected) {
-        this.addLogEntry('🌐 Connected to backend server', 'success');
-      }
-    } catch (error) {
-      this.isConnected = false;
-      this.elements.statusDot.classList.remove('connected');
-      this.elements.connectionStatus.textContent = 'Backend Offline';
-      console.error('Backend connection error:', error);
-    }
-  }
-
-  async executeCommand() {
-    const command = this.elements.commandInput.value.trim();
-
-    if (!command) {
-      this.updateStatus('Please enter a command', 'error');
-      return;
-    }
-
-    if (!this.currentFolder) {
-      this.updateStatus('Please select a folder first', 'error');
-      return;
-    }
-
-    try {
-      this.setExecuteButtonState(true);
-      this.updateStatus('Processing command...', 'info');
-
-      // First verify folder exists locally
-      if (!await this.verifyFolderExists(this.currentFolder)) {
-        throw new Error('Selected folder no longer exists');
-      }
-
-      const response = await fetch(`${this.backendUrl}/smart-execute`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          command,
-          folderPath: this.currentFolder
-        })
-      });
-
-      const data = await response.json();
-      
-      if (!data.success) {
-        throw new Error(data.error);
-      }
-
-      this.updateStatus('✅ Command executed successfully!', 'success');
-      this.elements.commandInput.value = '';
-      this.addLogEntry(`✅ ${data.message}`, 'success');
-
-    } catch (error) {
-      this.updateStatus(`❌ Error: ${error.message}`, 'error');
-      this.addLogEntry(`❌ ${error.message}`, 'error');
-    } finally {
-      this.setExecuteButtonState(false);
-    }
-  }
-
-  async verifyFolderExists(folderPath) {
-    try {
-      // Request file system permission
-      const handle = await window.showDirectoryPicker({
-        startIn: folderPath
-      });
-      return true;
-    } catch (error) {
-      return false;
-    }
-  }
-
-  updateStatus(message, type = 'info') {
-    this.elements.status.textContent = message;
-    this.elements.status.className = `status-message ${type}`;
-  }
-
-  addLogEntry(message, type = 'info') {
-    const entry = document.createElement('div');
-    entry.className = `log-entry log-${type}`;
-    entry.textContent = `[${new Date().toLocaleTimeString()}] ${message}`;
-    this.elements.logArea.appendChild(entry);
-    this.elements.logArea.scrollTop = this.elements.logArea.scrollHeight;
-  }
-
-  handleFolderError(error) {
-    console.error('Folder error:', error);
-    this.updateStatus(`❌ ${error.message}`, 'error');
-    this.addLogEntry(`Folder error: ${error.message}`, 'error');
-  }
-
-  // Add button state management function
-  setExecuteButtonState(isLoading) {
-    if (!this.elements.executeBtn) return;
-    
-    this.elements.executeBtn.disabled = isLoading;
-    this.elements.executeBtn.textContent = isLoading ? '🔄 Working...' : '🚀 Execute';
-  }
-}
-
-// Initialize when DOM is loaded
 document.addEventListener('DOMContentLoaded', () => {
-    new SmartAIFileManager();
+    const codeEditor = document.getElementById('codeEditor');
+    const aiCommand = document.getElementById('aiCommand');
+    const saveBtn = document.getElementById('saveBtn');
+    const sendBtn = document.getElementById('sendBtn');
+    const newBtn = document.getElementById('newBtn');
+    const loadBtn = document.getElementById('loadBtn');
+    const status = document.getElementById('status');
+
+    const backendUrl = 'http://localhost:3000';
+    let currentFile = ''; // Track the currently opened file
+
+    // Function to display status messages
+    function showStatus(message, isError = false) {
+        status.textContent = message;
+        status.style.color = isError ? 'red' : 'green';
+    }
+
+    // Function to send AI command to the backend
+    async function sendToAI(command, code) {
+        showStatus('Sending to AI...');
+        try {
+            const response = await fetch(`${backendUrl}/smart-execute`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({ command, code, filename: currentFile }),
+            });
+
+            const data = await response.json();
+
+            if (data.success) {
+                codeEditor.value = data.code; // Update the code editor with the AI's response
+                showStatus('AI updated the code!');
+            } else {
+                showStatus(`AI Error: ${data.error}`, true);
+            }
+        } catch (error) {
+            showStatus(`Network error: ${error.message}`, true);
+        }
+    }
+
+    // Function to save the current file
+    async function saveFile(filename, code) {
+        showStatus('Saving file...');
+        try {
+            const response = await fetch(`${backendUrl}/write-file`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({ filename, code }),
+            });
+
+            const data = await response.json();
+
+            if (data.success) {
+                showStatus('File saved successfully!');
+                currentFile = filename;
+            } else {
+                showStatus(`Save error: ${data.error}`, true);
+            }
+        } catch (error) {
+            showStatus(`Network error: ${error.message}`, true);
+        }
+    }
+
+    // Function to load a file
+    async function loadFile(filename) {
+        showStatus('Loading file...');
+        try {
+            const response = await fetch(`${backendUrl}/read-file?filename=${filename}`);
+            const data = await response.json();
+
+            if (data.success) {
+                codeEditor.value = data.code;
+                showStatus('File loaded!');
+                currentFile = filename;
+            } else {
+                showStatus(`Load error: ${data.error}`, true);
+            }
+        } catch (error) {
+            showStatus(`Network error: ${error.message}`, true);
+        }
+    }
+
+    // Event listeners for the buttons
+    saveBtn.addEventListener('click', () => {
+        const filename = prompt('Enter filename to save:');
+        if (filename) {
+            saveFile(filename, codeEditor.value);
+        }
+    });
+
+    sendBtn.addEventListener('click', () => {
+        const command = aiCommand.value;
+        sendToAI(command, codeEditor.value);
+    });
+
+    newBtn.addEventListener('click', () => {
+        codeEditor.value = '';
+        currentFile = '';
+        showStatus('New file created!');
+    });
+
+    loadBtn.addEventListener('click', () => {
+        const filename = prompt('Enter filename to load:');
+        if (filename) {
+            loadFile(filename);
+        }
+    });
 });
