@@ -156,14 +156,14 @@ class AIFileManagerServer {
           });
         }
 
-        // Store folder path without validation
-        // since folder exists on client machine
+        // Store the folder path without validation
+        // since the folder exists on client machine
         this.config.targetFolderPath = folderPath;
         await this.saveConfig();
 
         res.json({
           success: true,
-          message: 'Folder path registered successfully',
+          message: 'Folder registered successfully',
           path: folderPath
         });
 
