@@ -98,86 +98,59 @@ class AIFileManagerServer {
   }
 
   setupRoutes() {
-    this.app.get('/health', (req, res) => {
-      res.json({
-        status: 'healthy',
-        timestamp: new Date().toISOString(),
-        aiProvider: this.aiProvider,
-        targetFolder: this.config.targetFolderPath || 'Not set',
-        memory: process.memoryUsage(),
-        uptime: process.uptime()
-      });
-    });
-    
-    // Add connection keepalive
-    this.app.get('/ping', (req, res) => {
-      res.json({ timestamp: Date.now() });
-    });
-
-    this.app.post('/set-folder', (req, res) => {
-      try {
-        const { folderPath } = req.body;
-        
-        if (!folderPath) {
-          return res.status(400).json({ error: 'Folder path is required' });
-        }
-
-        if (!fs.existsSync(folderPath)) {
-          return res.status(400).json({ error: 'Folder does not exist' });
-        }
-
-        const stats = fs.statSync(folderPath);
-        if (!stats.isDirectory()) {
-          return res.status(400).json({ error: 'Path is not a directory' });
-        }
-
-        this.config.targetFolderPath = folderPath;
-        this.saveConfig();
-
-        res.json({
-          success: true,
-          message: 'Target folder set successfully',
-          folderPath: folderPath
-        });
-
-        console.log(`✅ Target folder set to: ${folderPath}`);
-      } catch (error) {
-        console.error('Error setting folder:', error);
-        res.status(500).json({ error: 'Failed to set folder path' });
-      }
-    });
-
-    // Add error handling to /smart-execute
     this.app.post('/smart-execute', async (req, res) => {
       try {
         const { command, folderPath } = req.body;
         
+        // Validate input
         if (!command || !folderPath) {
           return res.status(400).json({
             error: 'Missing required fields',
-            required: ['command', 'folderPath']
+            details: { command: !!command, folderPath: !!folderPath }
           });
         }
 
-        // Log request details
-        console.log('Smart execute request:', {
+        // Log request
+        console.log('📝 Processing command:', {
           command,
           folderPath,
           timestamp: new Date().toISOString()
         });
 
-        console.log(`🧠 Smart Execute: "${command}" in ${folderPath}`);
-
-        if (folderPath) {
-          this.config.targetFolderPath = folderPath;
-          this.saveConfig();
+        // Validate folder exists
+        if (!fs.existsSync(folderPath)) {
+          return res.status(400).json({
+            error: 'Folder does not exist',
+            path: folderPath
+          });
         }
 
-        if (!this.config.targetFolderPath) {
-          return res.status(400).json({ error: 'No target folder set' });
-        }
+        // Process command with AI
+        const result = await this.processAICommand(command, folderPath);
+        res.json(result);
 
-        const smartPrompt = `You are an expert file management AI. Analyze this user command and determine what files need to be created, updated, or deleted.
+      } catch (error) {
+        console.error('Smart execute error:', error);
+        res.status(500).json({
+          error: 'Failed to execute smart command',
+          details: error.message,
+          timestamp: new Date().toISOString()
+        });
+      }
+    });
+  }
+
+  async processAICommand(command, folderPath) {
+    if (folderPath) {
+      this.config.targetFolderPath = folderPath;
+      this.saveConfig();
+    }
+
+    if (!this.config.targetFolderPath) {
+      throw new Error('No target folder set');
+    }
+
+    const smartPrompt = `You are an expert file management AI. Analyze this user command and determine what files need to be created, updated, or deleted.
 
 User Command: "${command}"
 Target Folder: ${this.config.targetFolderPath}
@@ -206,107 +179,101 @@ Rules:
 
 Analyze the command and provide the JSON response:`;
 
-        let result, response, aiResponse;
-        try {
-          result = await this.model.generateContent(smartPrompt);
-          response = await result.response;
-          aiResponse = response.text();
-        } catch (aiError) {
-          console.error('AI generation error:', aiError);
-          throw new Error('AI service temporarily unavailable');
-        }
+    let result, response, aiResponse;
+    try {
+      result = await this.model.generateContent(smartPrompt);
+      response = await result.response;
+      aiResponse = response.text();
+    } catch (aiError) {
+      console.error('AI generation error:', aiError);
+      throw new Error('AI service temporarily unavailable');
+    }
 
-        aiResponse = aiResponse.replace(/``````/g, '').trim();
-        
-        let parsedResponse;
-        try {
-          parsedResponse = JSON.parse(aiResponse);
-        } catch (parseError) {
-          console.error('AI response parsing error:', parseError);
-          console.error('Raw AI response:', aiResponse);
-          
-          const isHtmlRequest = command.toLowerCase().includes('html') || command.toLowerCase().includes('web') || command.toLowerCase().includes('page');
-          const isPythonRequest = command.toLowerCase().includes('python') || command.toLowerCase().includes('.py');
-          
-          let fallbackContent = '';
-          let fallbackFilename = 'index.html';
-          
-          if (isPythonRequest) {
-            fallbackFilename = 'main.py';
-            fallbackContent = `# Python script generated by AI File Manager\nprint("Hello from AI File Manager!")\n\ndef main():\n    """Main function"""\n    # Add your code here\n    pass\n\nif __name__ == "__main__":\n    main()\n`;
-          } else {
-            fallbackContent = `<!DOCTYPE html>\n<html lang="en">\n<head>\n    <meta charset="UTF-8">\n    <meta name="viewport" content="width=device-width, initial-scale=1.0">\n    <title>AI Generated Page</title>\n    <style>\n        body { font-family: Arial, sans-serif; margin: 40px; }\n        h1 { color: #333; }\n    </style>\n</head>\n<body>\n    <h1>🤖 AI File Manager</h1>\n    <p>This file was created successfully!</p>\n    <p>Command: "${command}"</p>\n</body>\n</html>`;
-          }
-          
-          parsedResponse = {
-            summary: `Created ${fallbackFilename} (fallback)`,
-            actions: [{
-              action: "create",
-              filename: fallbackFilename,
-              content: fallbackContent,
-              reason: "Fallback creation"
-            }]
-          };
-        }
-
-        const filesAffected = [];
-
-        for (const action of parsedResponse.actions) {
-          const filePath = path.join(this.config.targetFolderPath, action.filename);
-
-          try {
-            switch (action.action) {
-              case 'create':
-              case 'update':
-                if (action.action === 'update' && fs.existsSync(filePath)) {
-                  this.createBackup(filePath);
-                }
-                
-                fs.ensureDirSync(path.dirname(filePath));
-                fs.writeFileSync(filePath, action.content || '', 'utf8');
-                
-                filesAffected.push({
-                  action: action.action === 'create' ? 'Created' : 'Updated',
-                  filename: action.filename,
-                  size: (action.content || '').length
-                });
-                
-                console.log(`✅ ${action.action}: ${action.filename}`);
-                break;
-
-              case 'delete':
-                if (fs.existsSync(filePath)) {
-                  this.createBackup(filePath);
-                  fs.unlinkSync(filePath);
-                  
-                  filesAffected.push({
-                    action: 'Deleted',
-                    filename: action.filename
-                  });
-                  
-                  console.log(`🗑️ Deleted: ${action.filename}`);
-                }
-                break;
-            }
-          } catch (fileError) {
-            console.error(`Error processing ${action.action} for ${action.filename}:`, fileError);
-          }
-        }
-
-        this.addToHistory(command, 'smart-execute', parsedResponse.summary);
-
-        res.json({
-          success: true,
-          summary: parsedResponse.summary,
-          filesAffected: filesAffected,
-          actionsCount: parsedResponse.actions.length
-        });
-
-      } catch (error) {
-        console.error('Error in /smart-execute:', error);
-        res.status(500).json({ error: 'Failed to execute smart command', details: error.message });
+    aiResponse = aiResponse.replace(/``````/g, '').trim();
+    
+    let parsedResponse;
+    try {
+      parsedResponse = JSON.parse(aiResponse);
+    } catch (parseError) {
+      console.error('AI response parsing error:', parseError);
+      console.error('Raw AI response:', aiResponse);
+      
+      const isHtmlRequest = command.toLowerCase().includes('html') || command.toLowerCase().includes('web') || command.toLowerCase().includes('page');
+      const isPythonRequest = command.toLowerCase().includes('python') || command.toLowerCase().includes('.py');
+      
+      let fallbackContent = '';
+      let fallbackFilename = 'index.html';
+      
+      if (isPythonRequest) {
+        fallbackFilename = 'main.py';
+        fallbackContent = `# Python script generated by AI File Manager\nprint("Hello from AI File Manager!")\n\ndef main():\n    """Main function"""\n    # Add your code here\n    pass\n\nif __name__ == "__main__":\n    main()\n`;
+      } else {
+        fallbackContent = `<!DOCTYPE html>\n<html lang="en">\n<head>\n    <meta charset="UTF-8">\n    <meta name="viewport" content="width=device-width, initial-scale=1.0">\n    <title>AI Generated Page</title>\n    <style>\n        body { font-family: Arial, sans-serif; margin: 40px; }\n        h1 { color: #333; }\n    </style>\n</head>\n<body>\n    <h1>🤖 AI File Manager</h1>\n    <p>This file was created successfully!</p>\n    <p>Command: "${command}"</p>\n</body>\n</html>`;
       }
-    });
+      
+      parsedResponse = {
+        summary: `Created ${fallbackFilename} (fallback)`,
+        actions: [{
+          action: "create",
+          filename: fallbackFilename,
+          content: fallbackContent,
+          reason: "Fallback creation"
+        }]
+      };
+    }
+
+    const filesAffected = [];
+
+    for (const action of parsedResponse.actions) {
+      const filePath = path.join(this.config.targetFolderPath, action.filename);
+
+      try {
+        switch (action.action) {
+          case 'create':
+          case 'update':
+            if (action.action === 'update' && fs.existsSync(filePath)) {
+              this.createBackup(filePath);
+            }
+            
+            fs.ensureDirSync(path.dirname(filePath));
+            fs.writeFileSync(filePath, action.content || '', 'utf8');
+            
+            filesAffected.push({
+              action: action.action === 'create' ? 'Created' : 'Updated',
+              filename: action.filename,
+              size: (action.content || '').length
+            });
+            
+            console.log(`✅ ${action.action}: ${action.filename}`);
+            break;
+
+          case 'delete':
+            if (fs.existsSync(filePath)) {
+              this.createBackup(filePath);
+              fs.unlinkSync(filePath);
+              
+              filesAffected.push({
+                action: 'Deleted',
+                filename: action.filename
+              });
+              
+              console.log(`🗑️ Deleted: ${action.filename}`);
+            }
+            break;
+        }
+      } catch (fileError) {
+        console.error(`Error processing ${action.action} for ${action.filename}:`, fileError);
+      }
+    }
+
+    this.addToHistory(command, 'smart-execute', parsedResponse.summary);
+
+    return {
+      success: true,
+      summary: parsedResponse.summary,
+      filesAffected: filesAffected,
+      actionsCount: parsedResponse.actions.length
+    };
   }
 
   createBackup(filePath) {

@@ -112,16 +112,37 @@ class SmartAIFileManager {
   async executeCommand() {
     const command = this.elements.commandInput.value.trim();
 
-    if (!this.validateCommand(command)) return;
+    if (!this.validateInput(command)) return;
 
     try {
       this.setExecuteButtonState(true);
-      this.updateStatus('Processing command...', 'info');
+      await this.executeWithRetry(command);
+    } catch (error) {
+      this.handleExecutionError(error);
+    } finally {
+      this.setExecuteButtonState(false);
+    }
+  }
 
+  validateInput(command) {
+    if (!command) {
+      this.updateStatus('❌ Please enter a command', 'error');
+      return false;
+    }
+    if (!this.currentFolder) {
+      this.updateStatus('❌ Please select a folder first', 'error');
+      return false;
+    }
+    return true;
+  }
+
+  async executeWithRetry(command, attempt = 1) {
+    try {
       const response = await fetch(`${this.backendUrl}/smart-execute`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
+          'Accept': 'application/json'
         },
         body: JSON.stringify({
           command,
@@ -132,95 +153,40 @@ class SmartAIFileManager {
       const data = await response.json();
 
       if (!response.ok) {
-        throw new Error(data.message || `Server error: ${response.status}`);
+        throw new Error(data.error || `Server error: ${response.status}`);
       }
 
       this.handleSuccess(data);
 
     } catch (error) {
-      console.error('Command execution failed:', error);
-      this.updateStatus(`❌ ${error.message}`, 'error');
-      this.addLogEntry(`❌ Error: ${error.message}`, 'error');
-    } finally {
-      this.setExecuteButtonState(false);
+      if (attempt < 3) {
+        console.log(`Retrying command (${attempt}/3)...`);
+        await new Promise(resolve => setTimeout(resolve, 1000));
+        return this.executeWithRetry(command, attempt + 1);
+      }
+      throw error;
     }
   }
 
-  async executeWithRetry(command, attempt = 1) {
-    try {
-        const response = await fetch(`${this.backendUrl}/smart-execute`, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({
-                command,
-                folderPath: this.currentFolder
-            }),
-            // Add timeout
-            signal: AbortSignal.timeout(5000)
-        });
-
-        if (!response.ok) {
-            throw new Error(`Server returned ${response.status}`);
-        }
-
-        const result = await response.json();
-        this.handleSuccess(result);
-
-    } catch (error) {
-        if (attempt < 3 && this.shouldRetry(error)) {
-            await new Promise(resolve => setTimeout(resolve, attempt * 1000));
-            return this.executeWithRetry(command, attempt + 1);
-        }
-        throw error;
+  handleSuccess(data) {
+    this.updateStatus('✅ Command executed successfully', 'success');
+    this.elements.commandInput.value = '';
+    
+    if (data.summary) {
+      this.addLogEntry(`✅ ${data.summary}`, 'success');
     }
-  }
 
-  shouldRetry(error) {
-    return error.message.includes('Failed to fetch') || 
-           error.message.includes('ECONNRESET') ||
-           error.name === 'AbortError';
-  }
-
-  validateCommand(command) {
-    if (!command) {
-        this.updateStatus('Please enter a command', 'error');
-        return false;
+    if (data.filesAffected?.length > 0) {
+      data.filesAffected.forEach(file => {
+        this.addLogEntry(`📄 ${file.action}: ${file.filename}`, 'info');
+      });
     }
-    if (!this.currentFolder) {
-        this.updateStatus('Please select a folder first', 'error');
-        return false;
-    }
-    return true;
   }
 
   handleExecutionError(error) {
     console.error('Command execution failed:', error);
-    const message = this.getErrorMessage(error);
-    this.updateStatus(`❌ Error: ${message}`, 'error');
-    this.addLogEntry(`❌ ${message}`, 'error');
-  }
-
-  getErrorMessage(error) {
-    if (error.name === 'AbortError') return 'Request timed out';
-    if (error.message.includes('ECONNRESET')) return 'Connection lost';
-    return error.message;
-  }
-
-  handleSuccess(result) {
-    this.updateStatus('✅ Command executed successfully', 'success');
-    this.elements.commandInput.value = '';
-    
-    if (result.summary) {
-      this.addLogEntry(`✅ ${result.summary}`, 'success');
-    }
-
-    if (result.filesAffected?.length > 0) {
-      result.filesAffected.forEach(file => {
-        this.addLogEntry(`📄 ${file.action}: ${file.filename}`, 'info');
-      });
-    }
+    this.updateStatus(`❌ Error: ${error.message}`, 'error');
+    this.addLogEntry(`❌ Error: ${error.message}`, 'error');
   }
 
   setExecuteButtonState(isLoading) {
