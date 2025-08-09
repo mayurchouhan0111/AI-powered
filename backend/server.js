@@ -138,6 +138,26 @@ class AIFileManagerServer {
         });
       }
     });
+
+    // Add detailed health check endpoint
+    this.app.get('/health', (req, res) => {
+      try {
+        res.json({
+          status: 'healthy',
+          timestamp: new Date().toISOString(),
+          aiProvider: this.aiProvider || 'not initialized',
+          version: process.version,
+          memory: process.memoryUsage(),
+          uptime: process.uptime()
+        });
+      } catch (error) {
+        res.status(500).json({
+          status: 'error',
+          error: error.message,
+          timestamp: new Date().toISOString()
+        });
+      }
+    });
   }
 
   async processAICommand(command, folderPath) {

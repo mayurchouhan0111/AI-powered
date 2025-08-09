@@ -260,7 +260,10 @@ class SmartAIFileManager {
       this.checkBackendConnection();
     }, 30000);
 
-    // Clean up on window close
+    // Initial check
+    this.checkBackendConnection();
+
+    // Cleanup on window close
     window.addEventListener('unload', () => {
       if (this.connectionCheckInterval) {
         clearInterval(this.connectionCheckInterval);
@@ -270,42 +273,45 @@ class SmartAIFileManager {
 
   async checkBackendConnection() {
     try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 5000);
+
       const response = await fetch(`${this.backendUrl}/health`, {
         method: 'GET',
         headers: {
           'Accept': 'application/json'
         },
-        // Add timeout
-        signal: AbortSignal.timeout(5000)
+        signal: controller.signal
       });
-      
-      if (response.ok) {
-        const data = await response.json();
-        this.elements.statusDot.classList.add('connected');
-        this.elements.connectionStatus.textContent = 'Backend Connected';
-        this.elements.executeBtn.disabled = false;
-        return true;
+
+      clearTimeout(timeoutId);
+
+      if (!response.ok) {
+        throw new Error(`Server returned ${response.status}`);
       }
-      throw new Error('Backend not responding');
+
+      const data = await response.json();
+      
+      if (data.status !== 'healthy') {
+        throw new Error('Backend reports unhealthy status');
+      }
+
+      this.elements.statusDot.classList.add('connected');
+      this.elements.connectionStatus.textContent = 'Backend Connected';
+      this.addLogEntry('🌐 Connected to backend server', 'success');
+      return true;
+
     } catch (error) {
-      this.handleConnectionError(error);
+      const message = error.name === 'AbortError' 
+        ? 'Connection timeout' 
+        : error.message;
+
+      this.elements.statusDot.classList.remove('connected');
+      this.elements.connectionStatus.textContent = 'Backend Offline';
+      this.updateStatus(`❌ Backend error: ${message}`, 'error');
+      console.error('Backend connection error:', error);
       return false;
     }
-  }
-
-  handleConnectionError(error) {
-    this.elements.statusDot.classList.remove('connected');
-    this.elements.connectionStatus.textContent = 'Backend Offline';
-    this.elements.executeBtn.disabled = true;
-    
-    const errorMessage = error.name === 'AbortError' 
-      ? 'Connection timeout' 
-      : error.message;
-    
-    this.updateStatus(`❌ Backend error: ${errorMessage}`, 'error');
-    this.addLogEntry(`❌ Connection failed: ${errorMessage}`, 'error');
-    
-    console.error('Backend connection error:', error);
   }
 
   updateStatus(message, type = 'info') {
